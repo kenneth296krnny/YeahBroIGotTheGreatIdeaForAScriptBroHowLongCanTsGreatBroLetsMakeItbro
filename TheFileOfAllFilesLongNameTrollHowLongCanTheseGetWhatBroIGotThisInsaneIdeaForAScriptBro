@@ -1,0 +1,526 @@
+– Minecraft ClickGUI Library for Roblox (Mobile First)
+– Black and Red (#000000, #BF392C) blocky aesthetic
+
+local ClickGUI = {}
+ClickGUI.__index = ClickGUI
+
+– Constants
+local COLORS = {
+BLACK = Color3.fromRGB(0, 0, 0),
+RED = Color3.fromRGB(191, 57, 44),
+DARK_RED = Color3.fromRGB(120, 35, 27)
+}
+
+local SIZES = {
+WIDTH = 280,
+HEIGHT = 550,
+HEADER_HEIGHT = 45,
+TAB_HEIGHT = 40,
+ELEMENT_HEIGHT = 35,
+TEXTBOX_HEIGHT = 30,
+BUTTON_HEIGHT = 35,
+PADDING = 5
+}
+
+– Create new ClickGUI instance
+function ClickGUI.new(title)
+local self = setmetatable({}, ClickGUI)
+
+```
+self.title = title or "CLIENT"
+self.tabs = {}
+self.settings = {}
+self.navigationStack = {}
+self.currentPage = nil
+
+self:CreateUI()
+self:LoadSettings()
+
+return self
+```
+
+end
+
+– Create the main UI structure
+function ClickGUI:CreateUI()
+local player = game.Players.LocalPlayer
+local screenGui = Instance.new(“ScreenGui”)
+screenGui.Name = “ClickGUI”
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = player:WaitForChild(“PlayerGui”)
+
+```
+self.screenGui = screenGui
+
+-- Main frame
+local main = Instance.new("Frame")
+main.Name = "MainFrame"
+main.Size = UDim2.new(0, SIZES.WIDTH, 0, SIZES.HEIGHT)
+main.Position = UDim2.new(0.5, -SIZES.WIDTH/2, 0.5, -SIZES.HEIGHT/2)
+main.BackgroundColor3 = COLORS.BLACK
+main.BorderColor3 = COLORS.RED
+main.BorderSizePixel = 2
+main.Parent = screenGui
+
+self.mainFrame = main
+
+-- Header (draggable area)
+local header = Instance.new("Frame")
+header.Name = "Header"
+header.Size = UDim2.new(1, 0, 0, SIZES.HEADER_HEIGHT)
+header.BackgroundColor3 = COLORS.RED
+header.BorderSizePixel = 0
+header.Parent = main
+
+self.header = header
+
+-- Header text
+local headerText = Instance.new("TextLabel")
+headerText.Name = "HeaderText"
+headerText.Size = UDim2.new(1, 0, 1, 0)
+headerText.BackgroundTransparency = 1
+headerText.Text = self.title
+headerText.TextColor3 = Color3.new(1, 1, 1)
+headerText.Font = Enum.Font.SourceSansBold
+headerText.TextSize = 20
+headerText.Parent = header
+
+self.headerText = headerText
+
+-- Content container
+local content = Instance.new("ScrollingFrame")
+content.Name = "Content"
+content.Size = UDim2.new(1, 0, 1, -SIZES.HEADER_HEIGHT)
+content.Position = UDim2.new(0, 0, 0, SIZES.HEADER_HEIGHT)
+content.BackgroundColor3 = COLORS.BLACK
+content.BorderSizePixel = 0
+content.ScrollBarThickness = 8
+content.ScrollBarImageColor3 = COLORS.RED
+content.CanvasSize = UDim2.new(0, 0, 0, 0)
+content.Parent = main
+
+self.content = content
+
+-- Make draggable on mobile
+self:MakeDraggable()
+
+-- Show root tabs initially
+self:ShowRootTabs()
+```
+
+end
+
+– Make UI draggable via header
+function ClickGUI:MakeDraggable()
+local header = self.header
+local main = self.mainFrame
+
+```
+local dragging = false
+local dragStart = nil
+local startPos = nil
+
+header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+       input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = main.Position
+    end
+end)
+
+header.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+       input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or 
+                    input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        main.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+```
+
+end
+
+– Add a new tab
+function ClickGUI:AddTab(name)
+local tab = {
+name = name,
+elements = {}
+}
+table.insert(self.tabs, tab)
+return tab
+end
+
+– Add slider element to tab
+function ClickGUI:AddSlider(tab, name, min, max, default)
+local element = {
+type = “slider”,
+name = name,
+min = min,
+max = max,
+value = default,
+default = default
+}
+table.insert(tab.elements, element)
+
+```
+-- Initialize setting
+if not self.settings[tab.name] then
+    self.settings[tab.name] = {}
+end
+self.settings[tab.name][name] = default
+
+return element
+```
+
+end
+
+– Add toggle element to tab
+function ClickGUI:AddToggle(tab, name, default)
+local element = {
+type = “toggle”,
+name = name,
+value = default,
+default = default
+}
+table.insert(tab.elements, element)
+
+```
+if not self.settings[tab.name] then
+    self.settings[tab.name] = {}
+end
+self.settings[tab.name][name] = default
+
+return element
+```
+
+end
+
+– Add button element to tab
+function ClickGUI:AddButton(tab, name, callback)
+local element = {
+type = “button”,
+name = name,
+callback = callback
+}
+table.insert(tab.elements, element)
+return element
+end
+
+– Show root tab list
+function ClickGUI:ShowRootTabs()
+self.navigationStack = {}
+self.currentPage = nil
+self.headerText.Text = self.title
+
+```
+-- Clear content
+for _, child in ipairs(self.content:GetChildren()) do
+    child:Destroy()
+end
+
+local yOffset = SIZES.PADDING
+
+-- Create tab buttons
+for _, tab in ipairs(self.tabs) do
+    local tabBtn = Instance.new("TextButton")
+    tabBtn.Name = tab.name
+    tabBtn.Size = UDim2.new(1, -SIZES.PADDING*2, 0, SIZES.TAB_HEIGHT)
+    tabBtn.Position = UDim2.new(0, SIZES.PADDING, 0, yOffset)
+    tabBtn.BackgroundColor3 = COLORS.BLACK
+    tabBtn.BorderColor3 = COLORS.RED
+    tabBtn.BorderSizePixel = 2
+    tabBtn.Text = tab.name
+    tabBtn.TextColor3 = Color3.new(1, 1, 1)
+    tabBtn.Font = Enum.Font.SourceSans
+    tabBtn.TextSize = 18
+    tabBtn.Parent = self.content
+    
+    tabBtn.MouseButton1Click:Connect(function()
+        self:ShowTabPage(tab)
+    end)
+    
+    yOffset = yOffset + SIZES.TAB_HEIGHT + SIZES.PADDING
+end
+
+-- Add separator
+yOffset = yOffset + SIZES.PADDING
+local separator = Instance.new("Frame")
+separator.Size = UDim2.new(1, -SIZES.PADDING*2, 0, 2)
+separator.Position = UDim2.new(0, SIZES.PADDING, 0, yOffset)
+separator.BackgroundColor3 = COLORS.RED
+separator.BorderSizePixel = 0
+separator.Parent = self.content
+
+yOffset = yOffset + SIZES.PADDING + 2
+
+self.content.CanvasSize = UDim2.new(0, 0, 0, yOffset)
+```
+
+end
+
+– Show tab page with settings
+function ClickGUI:ShowTabPage(tab)
+table.insert(self.navigationStack, tab)
+self.currentPage = tab
+self.headerText.Text = tab.name
+
+```
+-- Clear content
+for _, child in ipairs(self.content:GetChildren()) do
+    child:Destroy()
+end
+
+local yOffset = SIZES.PADDING
+local tempValues = {}
+
+-- Create elements
+for _, element in ipairs(tab.elements) do
+    if element.type == "slider" then
+        -- Label
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, -SIZES.PADDING*2, 0, 25)
+        label.Position = UDim2.new(0, SIZES.PADDING, 0, yOffset)
+        label.BackgroundTransparency = 1
+        label.Text = element.name
+        label.TextColor3 = Color3.new(1, 1, 1)
+        label.Font = Enum.Font.SourceSans
+        label.TextSize = 16
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Parent = self.content
+        
+        yOffset = yOffset + 25
+        
+        -- Textbox
+        local textbox = Instance.new("TextBox")
+        textbox.Size = UDim2.new(1, -SIZES.PADDING*4, 0, SIZES.TEXTBOX_HEIGHT)
+        textbox.Position = UDim2.new(0, SIZES.PADDING*2, 0, yOffset)
+        textbox.BackgroundColor3 = COLORS.BLACK
+        textbox.BorderColor3 = COLORS.RED
+        textbox.BorderSizePixel = 2
+        textbox.Text = tostring(self.settings[tab.name][element.name])
+        textbox.TextColor3 = Color3.new(1, 1, 1)
+        textbox.Font = Enum.Font.SourceSans
+        textbox.TextSize = 16
+        textbox.PlaceholderText = element.min .. " - " .. element.max
+        textbox.Parent = self.content
+        
+        tempValues[element.name] = textbox
+        
+        yOffset = yOffset + SIZES.TEXTBOX_HEIGHT + SIZES.PADDING*2
+        
+    elseif element.type == "toggle" then
+        local toggleBtn = Instance.new("TextButton")
+        toggleBtn.Size = UDim2.new(1, -SIZES.PADDING*2, 0, SIZES.ELEMENT_HEIGHT)
+        toggleBtn.Position = UDim2.new(0, SIZES.PADDING, 0, yOffset)
+        toggleBtn.BackgroundColor3 = self.settings[tab.name][element.name] and COLORS.RED or COLORS.DARK_RED
+        toggleBtn.BorderColor3 = COLORS.RED
+        toggleBtn.BorderSizePixel = 2
+        toggleBtn.Text = element.name .. ": " .. (self.settings[tab.name][element.name] and "ON" or "OFF")
+        toggleBtn.TextColor3 = Color3.new(1, 1, 1)
+        toggleBtn.Font = Enum.Font.SourceSans
+        toggleBtn.TextSize = 16
+        toggleBtn.Parent = self.content
+        
+        toggleBtn.MouseButton1Click:Connect(function()
+            self.settings[tab.name][element.name] = not self.settings[tab.name][element.name]
+            toggleBtn.BackgroundColor3 = self.settings[tab.name][element.name] and COLORS.RED or COLORS.DARK_RED
+            toggleBtn.Text = element.name .. ": " .. (self.settings[tab.name][element.name] and "ON" or "OFF")
+            self:SaveSettings()
+        end)
+        
+        yOffset = yOffset + SIZES.ELEMENT_HEIGHT + SIZES.PADDING
+        
+    elseif element.type == "button" then
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, -SIZES.PADDING*2, 0, SIZES.BUTTON_HEIGHT)
+        btn.Position = UDim2.new(0, SIZES.PADDING, 0, yOffset)
+        btn.BackgroundColor3 = COLORS.RED
+        btn.BorderColor3 = COLORS.RED
+        btn.BorderSizePixel = 2
+        btn.Text = element.name
+        btn.TextColor3 = Color3.new(1, 1, 1)
+        btn.Font = Enum.Font.SourceSansBold
+        btn.TextSize = 16
+        btn.Parent = self.content
+        
+        btn.MouseButton1Click:Connect(function()
+            if element.callback then
+                element.callback()
+            end
+        end)
+        
+        yOffset = yOffset + SIZES.BUTTON_HEIGHT + SIZES.PADDING
+    end
+end
+
+-- Set button (only if there are sliders/textboxes)
+if next(tempValues) then
+    yOffset = yOffset + SIZES.PADDING
+    
+    local setBtn = Instance.new("TextButton")
+    setBtn.Size = UDim2.new(0, 100, 0, SIZES.BUTTON_HEIGHT)
+    setBtn.Position = UDim2.new(0.5, -50, 0, yOffset)
+    setBtn.BackgroundColor3 = COLORS.RED
+    setBtn.BorderColor3 = COLORS.RED
+    setBtn.BorderSizePixel = 2
+    setBtn.Text = "Set"
+    setBtn.TextColor3 = Color3.new(1, 1, 1)
+    setBtn.Font = Enum.Font.SourceSansBold
+    setBtn.TextSize = 18
+    setBtn.Parent = self.content
+    
+    setBtn.MouseButton1Click:Connect(function()
+        for name, textbox in pairs(tempValues) do
+            local val = tonumber(textbox.Text)
+            if val then
+                -- Find element to get min/max
+                for _, elem in ipairs(tab.elements) do
+                    if elem.name == name and elem.type == "slider" then
+                        val = math.clamp(val, elem.min, elem.max)
+                        self.settings[tab.name][name] = val
+                        textbox.Text = tostring(val)
+                        break
+                    end
+                end
+            end
+        end
+        self:SaveSettings()
+    end)
+    
+    yOffset = yOffset + SIZES.BUTTON_HEIGHT + SIZES.PADDING*2
+end
+
+-- Back button
+yOffset = yOffset + SIZES.PADDING
+
+local backBtn = Instance.new("TextButton")
+backBtn.Size = UDim2.new(1, -SIZES.PADDING*2, 0, SIZES.TAB_HEIGHT)
+backBtn.Position = UDim2.new(0, SIZES.PADDING, 0, yOffset)
+backBtn.BackgroundColor3 = COLORS.BLACK
+backBtn.BorderColor3 = COLORS.RED
+backBtn.BorderSizePixel = 2
+backBtn.Text = "< Back"
+backBtn.TextColor3 = Color3.new(1, 1, 1)
+backBtn.Font = Enum.Font.SourceSans
+backBtn.TextSize = 18
+backBtn.TextXAlignment = Enum.TextXAlignment.Left
+backBtn.TextXAlignment = Enum.TextXAlignment.Center
+backBtn.Parent = self.content
+
+backBtn.MouseButton1Click:Connect(function()
+    self:NavigateBack()
+end)
+
+yOffset = yOffset + SIZES.TAB_HEIGHT + SIZES.PADDING
+
+self.content.CanvasSize = UDim2.new(0, 0, 0, yOffset)
+```
+
+end
+
+– Navigate back in stack
+function ClickGUI:NavigateBack()
+table.remove(self.navigationStack)
+if #self.navigationStack == 0 then
+self:ShowRootTabs()
+end
+end
+
+– Save settings to file
+function ClickGUI:SaveSettings()
+local success, err = pcall(function()
+local HttpService = game:GetService(“HttpService”)
+local json = HttpService:JSONEncode(self.settings)
+writefile(“clickgui_settings.json”, json)
+end)
+
+```
+if not success then
+    warn("Failed to save settings:", err)
+end
+```
+
+end
+
+– Load settings from file
+function ClickGUI:LoadSettings()
+local success, result = pcall(function()
+if isfile and isfile(“clickgui_settings.json”) then
+local HttpService = game:GetService(“HttpService”)
+local json = readfile(“clickgui_settings.json”)
+return HttpService:JSONDecode(json)
+end
+return nil
+end)
+
+```
+if success and result then
+    self.settings = result
+end
+```
+
+end
+
+– Get setting value
+function ClickGUI:GetSetting(tabName, settingName)
+if self.settings[tabName] then
+return self.settings[tabName][settingName]
+end
+return nil
+end
+
+– Toggle visibility
+function ClickGUI:Toggle()
+self.mainFrame.Visible = not self.mainFrame.Visible
+end
+
+– Example usage
+local gui = ClickGUI.new(“CLIENT”)
+
+– Movement tab
+local movementTab = gui:AddTab(“Movement”)
+gui:AddSlider(movementTab, “WalkSpeed”, 0, 100, 16)
+gui:AddSlider(movementTab, “JumpPower”, 0, 200, 50)
+gui:AddToggle(movementTab, “Flight”, false)
+
+– Combat tab
+local combatTab = gui:AddTab(“Combat”)
+gui:AddSlider(combatTab, “Reach”, 3, 20, 3)
+gui:AddToggle(combatTab, “KillAura”, false)
+gui:AddToggle(combatTab, “AutoClicker”, false)
+
+– Render tab
+local renderTab = gui:AddTab(“Render”)
+gui:AddToggle(renderTab, “ESP”, false)
+gui:AddToggle(renderTab, “Tracers”, false)
+gui:AddToggle(renderTab, “Fullbright”, false)
+
+– Player tab
+local playerTab = gui:AddTab(“Player”)
+gui:AddToggle(playerTab, “NoClip”, false)
+gui:AddToggle(playerTab, “InfiniteJump”, false)
+
+– World tab
+local worldTab = gui:AddTab(“World”)
+gui:AddToggle(worldTab, “Xray”, false)
+gui:AddSlider(worldTab, “Time”, 0, 24, 12)
+
+– Toggle with Right Shift key
+game:GetService(“UserInputService”).InputBegan:Connect(function(input, gameProcessed)
+if not gameProcessed and input.KeyCode == Enum.KeyCode.RightShift then
+gui:Toggle()
+end
+end)
+
+return ClickGUI
