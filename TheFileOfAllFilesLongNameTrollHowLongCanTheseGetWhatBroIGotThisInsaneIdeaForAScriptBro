@@ -312,7 +312,7 @@ for _, element in ipairs(tab.elements) do
         textbox.TextColor3 = Color3.new(1, 1, 1)
         textbox.Font = Enum.Font.SourceSans
         textbox.TextSize = 16
-        textbox.PlaceholderText = element.min .. " - " .. element.max
+        textbox.PlaceholderText = element.min .. " to " .. element.max
         textbox.Parent = self.content
         
         tempValues[element.name] = textbox
